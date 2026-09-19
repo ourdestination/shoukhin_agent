@@ -59,6 +59,31 @@ window.saveProfile=async function(e){e.preventDefault();if(!currentUser||!curren
 window.changePhoto=async function(e){const file=e.target.files?.[0];if(!file||!currentUser)return;if(file.size>5*1024*1024){alert('Please choose a photo under 5MB.');return;}try{const data=await resizeImage(file);await update(ref(db,'agents/'+(currentProfile.uid||currentUser.uid)),{photo:data,updatedAt:Date.now()});alert('Profile photo updated.');}catch(err){alert('Could not update photo: '+err.message);}};
 function resizeImage(file){return new Promise((resolve,reject)=>{const img=new Image(),url=URL.createObjectURL(file);img.onload=()=>{const max=512,s=Math.min(1,max/Math.max(img.width,img.height)),c=document.createElement('canvas');c.width=Math.max(1,Math.round(img.width*s));c.height=Math.max(1,Math.round(img.height*s));c.getContext('2d').drawImage(img,0,0,c.width,c.height);URL.revokeObjectURL(url);resolve(c.toDataURL('image/jpeg',.78));};img.onerror=reject;img.src=url;});}
 window.toggleLoginMethod();
-onAuthStateChanged(auth,async user=>{currentUser=user;if(user&&submittingSignup)return;if(agentListener){agentListener();agentListener=null;}if(!user){$('authBox').classList.remove('hidden');$('dashboard').classList.add('hidden');$('logoutBtn').classList.add('hidden');$('loginMethod').disabled=false;window.toggleLoginMethod();return;}const pinSession=JSON.parse(sessionStorage.getItem('pinLoginProfile')||'null');if(pinSession&&user.isAnonymous){const snap=await get(ref(db,'agents/'+pinSession.uid));const p=snap.val();if(!p||p.id!==pinSession.id||p.status==='locked'||p.status==='inactive'||p.approved===false){sessionStorage.removeItem('pinLoginProfile');await signOut(auth);alert('PIN login session is no longer valid. Please login with Password.');return;}$('authBox').classList.add('hidden');$('dashboard').classList.remove('hidden');$('logoutBtn').classList.remove('hidden');render(p);await renderStatsAndCodes(p);$('loading').classList.add('hidden');$('profileContent').classList.remove('hidden');return;}$('authBox').classList.add('hidden');$('dashboard').classList.remove('hidden');$('logoutBtn').classList.remove('hidden');$('loading').classList.remove('hidden');$('profileContent').classList.add('hidden');agentListener=onValue(ref(db,'agents/'+user.uid),async snap=>{let p=snap.val();if(!p){await signOut(auth);alert('Agent profile was not found. Please contact admin.');return;}if(!p.id||p.approved===false||p.status==='pending'){await signOut(auth);alert('Your agent application is still pending admin approval.');return;}if(p.status==='locked'||p.status==='inactive'){await signOut(auth);alert('Your Agent ID is locked by admin.');return;}render(p);await renderStatsAndCodes(p);$('loading').classList.add('hidden');$('profileContent').classList.remove('hidden');});});
+onAuthStateChanged(auth,async user=>{currentUser=user;if(user&&submittingSignup)return;
+if(user){setTimeout(()=>registerShoukhinPush(user.uid),500);}if(agentListener){agentListener();agentListener=null;}if(!user){$('authBox').classList.remove('hidden');$('dashboard').classList.add('hidden');$('logoutBtn').classList.add('hidden');$('loginMethod').disabled=false;window.toggleLoginMethod();return;}const pinSession=JSON.parse(sessionStorage.getItem('pinLoginProfile')||'null');if(pinSession&&user.isAnonymous){const snap=await get(ref(db,'agents/'+pinSession.uid));const p=snap.val();if(!p||p.id!==pinSession.id||p.status==='locked'||p.status==='inactive'||p.approved===false){sessionStorage.removeItem('pinLoginProfile');await signOut(auth);alert('PIN login session is no longer valid. Please login with Password.');return;}$('authBox').classList.add('hidden');$('dashboard').classList.remove('hidden');$('logoutBtn').classList.remove('hidden');render(p);await renderStatsAndCodes(p);$('loading').classList.add('hidden');$('profileContent').classList.remove('hidden');return;}$('authBox').classList.add('hidden');$('dashboard').classList.remove('hidden');$('logoutBtn').classList.remove('hidden');$('loading').classList.remove('hidden');$('profileContent').classList.add('hidden');agentListener=onValue(ref(db,'agents/'+user.uid),async snap=>{let p=snap.val();if(!p){await signOut(auth);alert('Agent profile was not found. Please contact admin.');return;}if(!p.id||p.approved===false||p.status==='pending'){await signOut(auth);alert('Your agent application is still pending admin approval.');return;}if(p.status==='locked'||p.status==='inactive'){await signOut(auth);alert('Your Agent ID is locked by admin.');return;}render(p);await renderStatsAndCodes(p);$('loading').classList.add('hidden');$('profileContent').classList.remove('hidden');});});
+</script>
+
+<script type="module">
+// SHOUKHIN FCM PUSH REGISTRATION
+import { getMessaging, getToken, onMessage } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-messaging.js";
+const SHOUKHIN_VAPID_KEY = "BPd7dsoetnhWWoSnxB9YKT0184S5WjVYnVIS2J9QMUjZZC-X5vGYqbAvIpAq5QQ";
+async function registerShoukhinPush(userId) {
+  try {
+    if (!('serviceWorker' in navigator) || !('Notification' in window)) return;
+    const reg = await navigator.serviceWorker.register('./firebase-messaging-sw.js');
+    if (Notification.permission === 'default') await Notification.requestPermission();
+    if (Notification.permission !== 'granted') return;
+    const messaging = getMessaging(app);
+    const token = await getToken(messaging, { vapidKey: SHOUKHIN_VAPID_KEY, serviceWorkerRegistration: reg });
+    if (!token) return;
+    await set(ref(db, 'agent_fcm_tokens/' + userId + '/tokens/' + encodeURIComponent(token)), {token,updatedAt:Date.now()});
+    onMessage(messaging, payload => {
+      const n=payload.notification||{};
+      try { const a=new Audio('data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQAAAAA='); a.play().catch(()=>{}); } catch(e){}
+      if (Notification.permission==='granted' && document.visibilityState==='visible') new Notification(n.title||'Shoukhin', {body:n.body||'',icon:n.icon||'/favicon.ico',data:payload.data||{}});
+    });
+  } catch(e) { console.warn('FCM registration failed',e); }
+}
+window.registerShoukhinPush = registerShoukhinPush;
 </script>
 </body></html>
